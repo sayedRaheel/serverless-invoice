@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.git
+.github
+*.md
+.DS_Store
+test_request.py
+sample*.pdf
