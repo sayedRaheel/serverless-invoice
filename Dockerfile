@@ -30,29 +30,27 @@ COPY requirements.txt .
 RUN pip install --upgrade pip setuptools wheel \
  && pip install -r requirements.txt
 
-# Pre-pull qwen2.5vl:7b into the image so cold-start workers don't re-download ~6 GB
-RUN set -eux; \
-    ollama serve > /tmp/ollama.log 2>&1 & \
-    OLLAMA_PID=$!; \
-    for i in $(seq 1 30); do \
-        if curl -sf http://127.0.0.1:11434/api/version > /dev/null; then break; fi; \
-        sleep 1; \
-    done; \
-    curl -sf http://127.0.0.1:11434/api/version || (echo "ollama serve failed to start"; cat /tmp/ollama.log; exit 1); \
-    ollama pull qwen2.5vl:7b; \
-    ls -la /root/.ollama/models/blobs/ | head; \
-    kill $OLLAMA_PID; \
-    wait $OLLAMA_PID 2>/dev/null || true
+# Note: qwen2.5vl:7b is downloaded on first cold start per worker (~2-3 min, ~6 GB).
+# Pre-pulling at build time isn't viable on GitHub Actions runners (no GPU, ollama
+# serve behavior inconsistent). OLLAMA_KEEP_ALIVE=-1 keeps the model resident once loaded.
 
 COPY app ./app
 COPY handler.py ./handler.py
 
-# Start script: Ollama in background, warm the model, then handler
+# Start script: Ollama in background, wait for server, ensure model present, then handler
 RUN cat > /start.sh <<'SH'
 #!/usr/bin/env bash
 set -e
 ollama serve &
-sleep 3
+for i in $(seq 1 60); do
+    curl -sf http://127.0.0.1:11434/api/version > /dev/null && break
+    sleep 1
+done
+if ! ollama list 2>/dev/null | grep -q 'qwen2.5vl:7b'; then
+    echo "[start.sh] pulling qwen2.5vl:7b (first-run download, ~6 GB)"
+    ollama pull qwen2.5vl:7b
+fi
+# Warm the model into VRAM in background
 (ollama run qwen2.5vl:7b "hi" > /dev/null 2>&1 &)
 exec python -u handler.py
 SH
