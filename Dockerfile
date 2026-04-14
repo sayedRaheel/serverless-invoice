@@ -16,8 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.11 /usr/bin/python
 
-# Ollama (Qwen2.5-VL backend)
-RUN curl -fsSL https://ollama.com/install.sh | sh
+# Ollama (Qwen2.5-VL backend) — install binary directly (install.sh fails in Docker build)
+ARG OLLAMA_VERSION=v0.5.7
+RUN curl -fsSL -o /tmp/ollama.tgz \
+        https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tgz \
+ && tar -C /usr -xzf /tmp/ollama.tgz \
+ && rm /tmp/ollama.tgz \
+ && ollama --version
 
 WORKDIR /app
 
