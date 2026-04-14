@@ -31,10 +31,18 @@ RUN pip install --upgrade pip setuptools wheel \
  && pip install -r requirements.txt
 
 # Pre-pull qwen2.5vl:7b into the image so cold-start workers don't re-download ~6 GB
-RUN ollama serve & \
-    sleep 5 && \
-    ollama pull qwen2.5vl:7b && \
-    pkill -f "ollama serve" || true
+RUN set -eux; \
+    ollama serve > /tmp/ollama.log 2>&1 & \
+    OLLAMA_PID=$!; \
+    for i in $(seq 1 30); do \
+        if curl -sf http://127.0.0.1:11434/api/version > /dev/null; then break; fi; \
+        sleep 1; \
+    done; \
+    curl -sf http://127.0.0.1:11434/api/version || (echo "ollama serve failed to start"; cat /tmp/ollama.log; exit 1); \
+    ollama pull qwen2.5vl:7b; \
+    ls -la /root/.ollama/models/blobs/ | head; \
+    kill $OLLAMA_PID; \
+    wait $OLLAMA_PID 2>/dev/null || true
 
 COPY app ./app
 COPY handler.py ./handler.py
