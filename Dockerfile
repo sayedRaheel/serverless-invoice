@@ -10,11 +10,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     OLLAMA_MODELS=/root/.ollama/models
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3.11-venv python3-pip \
+        python3 python3-pip \
         libgl1 libglib2.0-0 libgomp1 \
         poppler-utils curl ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 # Ollama (Qwen2.5-VL backend) — install binary directly (install.sh fails in Docker build)
 ARG OLLAMA_VERSION=v0.5.7
