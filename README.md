@@ -10,31 +10,25 @@ PDF → PyMuPDF classifier (is_digital?) → Qwen2.5-VL via Ollama → confidenc
 
 ## Deploy
 
-### 1. Push to GitHub
+RunPod builds the Dockerfile from this repo automatically via its native GitHub integration. No registry setup, no workflows, no image management.
 
-```bash
-gh repo create serverless-invoice --private --source=. --remote=origin --push
-```
+### 1. Create the Serverless endpoint
 
-GitHub Actions will auto-build and push `ghcr.io/sayedraheel/serverless-invoice:latest` (~20 min).
+RunPod Console → **Serverless** → **New Endpoint** → **GitHub** tab:
 
-### 2. Make GHCR image public
+- **Connect GitHub** → authorize RunPod → select `sayedRaheel/serverless-invoice`
+- **Branch**: `main`
+- **Dockerfile path**: `Dockerfile` (repo root — RunPod auto-detects)
+- **GPU**: RTX 4090 (24 GB) or A5000 (24 GB) — needs ≥16 GB VRAM for Qwen2.5-VL 7B
+- **Min workers**: `0` (true pay-per-use)
+- **Max workers**: `3`
+- **Idle timeout**: `5` seconds
+- **Execution timeout**: `600` seconds
+- **Container disk**: `30` GB
 
-`github.com/users/sayedraheel/packages/container/serverless-invoice/settings` → Danger Zone → Change visibility → **Public**.
+Click **Deploy**. RunPod clones the repo, builds the image, and caches it in their registry. First build takes ~15–20 min (torch + Ollama + qwen model pre-pull).
 
-### 3. Create a RunPod Serverless endpoint
-
-RunPod Console → **Serverless** → **New Endpoint**:
-
-- **Container image**: `ghcr.io/sayedraheel/serverless-invoice:latest`
-- **GPU**: RTX 4090 (24 GB) or A5000 (24 GB) — needs ≥ 16 GB VRAM for Qwen2.5-VL 7B
-- **Min workers**: 0 (true pay-per-use)
-- **Max workers**: 3
-- **Idle timeout**: 5 seconds
-- **Execution timeout**: 600 seconds
-- **Container disk**: 30 GB
-
-No env vars required. Model is baked into the image.
+Subsequent pushes to `main` trigger a rebuild automatically.
 
 ## Request format
 
@@ -71,8 +65,7 @@ No env vars required. Model is baked into the image.
     "vendor_name": "Acme Corp",
     "total_amount": 1234.56,
     "line_items": [...],
-    "overall_confidence": 0.91,
-    ...
+    "overall_confidence": 0.91
   }
 }
 ```
@@ -85,12 +78,21 @@ No env vars required. Model is baked into the image.
 4. `sum(line_items) ≠ subtotal` (tolerance: 5% or $1)
 5. `field_completeness < 1.0`
 
-## Test locally
+## Test requests
 
 ```bash
-export RUNPOD_ENDPOINT_ID=xxxxxxxx
-export RUNPOD_API_KEY=xxxxxxxx
+export RUNPOD_ENDPOINT_ID=xxxxxxxx   # from RunPod endpoint page
+export RUNPOD_API_KEY=xxxxxxxx       # from RunPod → Settings → API Keys
 python test_request.py sample_invoice.pdf
+```
+
+Or via curl:
+
+```bash
+curl -X POST https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/runsync \
+  -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"input\":{\"file\":\"$(base64 -i sample.pdf)\",\"filename\":\"sample.pdf\"}}"
 ```
 
 ## Cost notes
@@ -98,10 +100,11 @@ python test_request.py sample_invoice.pdf
 - RunPod Serverless bills by GPU-second: ~$0.00024/s on RTX 4090
 - Typical invoice: ~15s GPU time = ~$0.0036/invoice
 - Cold start (worker spinup + Ollama warmup): ~30–60s first request, then warm for idle timeout
-- Image is ~10 GB (baked Qwen model) — RunPod caches it per-region after first pull
+- Min workers `0` means you pay $0 when idle
+- Image is ~10 GB (Qwen model baked in) — RunPod caches it per-region after first pull
 
 ## Notes
 
 - Qwen2.5-VL handles both digital and scanned PDFs in vision mode
-- The `is_digital` flag is captured but not used for routing yet — future optimization: text-mode path for digital PDFs to save GPU
+- The `is_digital` flag is captured but not used for routing — future optimization: text-mode path for digital PDFs to save GPU time
 - Multi-page PDFs currently process page 1 only (matching the non-serverless pipeline behavior)
